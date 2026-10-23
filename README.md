@@ -2,6 +2,8 @@
 
 Forge is a Claude Code mod. It draws a status board in a pane beside the chat.
 
+![The Forge pane with sample data from /forge-demo](docs/forge.png)
+
 - A pixel art banner: a starry night with a duck that holds a lightsaber, the word FORGE and a crescent moon. By day the sky turns blue, with a sun and clouds.
 - A summary line: review requests, running subagents, failing CI and your next meeting.
 - Subagents: the subagents of this session, with their status. Click a row to open its transcript.
