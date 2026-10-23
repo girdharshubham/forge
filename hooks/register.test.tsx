@@ -338,6 +338,8 @@ test('demo mode shows sample data and goes back', async ($, on) => {
   expect(await ui.find({ type: 'Text', text: /Review the release notes/ })).toBeTruthy()
   expect(await ui.find({ type: 'Text', text: /Pairing on the deploy script/ })).toBeTruthy()
   expect(await ui.find({ type: 'Text', text: /changes requested/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /\(UTC\)/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /10:20 UTC/ })).toBeTruthy()
   await ui.unmount()
 
   await $.command.run({ command: 'forge-demo', args: '' } as never)

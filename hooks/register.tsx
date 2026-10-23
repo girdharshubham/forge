@@ -95,6 +95,10 @@ let isRunning = false
 let isDemo = false
 let realBoard: Board | undefined
 let realSubagents: Agent[] | undefined
+let realZone = { zone: 'UTC', label: 'UTC' }
+// The demo's own clock and zone, so a screenshot shows neither your time nor
+// your time zone: a fixed Thursday morning in UTC, under the night sky.
+const DEMO_NOW = Date.parse('2026-01-15T10:20:00Z')
 let calendarTries = 0
 let isCalendarWaiting = false
 let lastSubagents = ''
@@ -510,6 +514,10 @@ async function refresh($: Api): Promise<void> {
 // session.start and with the session's values gone. Put the last board back
 // at once, then refresh.
 async function restore($: Api): Promise<void> {
+  if (isDemo) {
+    TZ = realZone.zone
+    TZ_LABEL = realZone.label
+  }
   isDemo = false
   const saved = (await $.store.get('lastBoard')) as Board | undefined
   if (saved) await update($, board, () => saved)
@@ -979,14 +987,18 @@ export const register: Register = (on, options) => {
       realBoard = await read($, board)
       realSubagents = await read($, subagents)
       isDemo = true
-      const now = await $.clock.now()
-      await update($, board, () => demoBoard(now))
+      realZone = { zone: TZ, label: TZ_LABEL }
+      TZ = 'UTC'
+      TZ_LABEL = 'UTC'
+      await update($, board, () => demoBoard(DEMO_NOW))
       await update($, subagents, () => DEMO_SUBAGENTS)
       await openPane($, e.presentation?.columns ? share(e.presentation.columns) : undefined)
 
       return { text: 'Forge shows sample data. Run /forge-demo again to go back.' }
     }
     isDemo = false
+    TZ = realZone.zone
+    TZ_LABEL = realZone.label
     if (realBoard) await update($, board, () => realBoard as Board)
     await update($, subagents, () => realSubagents ?? [])
     lastSubagents = ''
@@ -1050,8 +1062,10 @@ export const register: Register = (on, options) => {
     const tagColor: Record<Status, string> = { WORKING: GREEN, WAITING: AMBER, BLOCKED: AMBER, DONE: BLUE }
 
     // Today's schedule against the clock: done, now, next, later.
-    const nowMs = nowRead > 0 ? nowRead : Date.now()
-    const frame = Math.floor(nowMs / FRAME_MS)
+    const realNow = nowRead > 0 ? nowRead : Date.now()
+    const nowMs = isDemo ? DEMO_NOW : realNow
+    // The stars keep their real beat in the demo, so the banner still moves.
+    const frame = Math.floor(realNow / FRAME_MS)
     const localHour = localDate(nowMs).getUTCHours()
     const hhmm = (ms: number) => localDate(ms).toISOString().slice(11, 16)
     const span = (ms: number) => {
@@ -1127,7 +1141,7 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column" width={width}>
-        {bannerRows(width, b.seed, frame, localHour >= 7 && localHour < 18).map(row => (
+        {bannerRows(width, b.seed, frame, !isDemo && localHour >= 7 && localHour < 18).map(row => (
           <Text wrap="truncate-end">
             {row.map(s => (
               <Text color={s.c} backgroundColor={s.bg ?? NAVY} bold={s.b === true}>
@@ -1176,8 +1190,8 @@ export const register: Register = (on, options) => {
         {subs.map(a => (
           <Box justifyContent="space-between" width={width}>
             <Button key={`sub-${a.id ?? a.title}`} plain onPress={() => (a.id ? $.ui.view({ agentId: a.id }) : undefined)}>
-              {'  '.repeat(a.depth ?? 0)}
               <Text color={tagColor[a.status]}>{`${ROBOT} `}</Text>
+              <Text color={FAINT}>{(a.depth ?? 0) > 0 ? `${'  '.repeat((a.depth ?? 1) - 1)}└ ` : ''}</Text>
               <Text color={WHITE} underline>
                 {fit(a.title, room - 2 * (a.depth ?? 0) - 5 - (a.detail ?? '').length - 1 - (a.status.length + 3))}
               </Text>
