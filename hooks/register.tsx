@@ -90,6 +90,11 @@ const clock = atom({ plugin: 'forge', key: 'now' } as const, 0, { shape: 'now-1'
 const githubHidden = atom({ plugin: 'forge', key: 'githubHidden' } as const, false, { shape: 'hidden-1' })
 
 let isRunning = false
+// Demo mode: sample data for screenshots. While it is on, nothing real is read,
+// drawn or alerted, and the real board waits here.
+let isDemo = false
+let realBoard: Board | undefined
+let realSubagents: Agent[] | undefined
 let calendarTries = 0
 let isCalendarWaiting = false
 let lastSubagents = ''
@@ -252,6 +257,7 @@ const FAILED_SHOWN_MS = 10 * 60 * 1000
 const failedAt = new Map<string, number>()
 
 async function pollSubagents($: Api): Promise<void> {
+  if (isDemo) return
   const list = await $.agent.list()
   const now = await $.clock.now()
   const byId = new Map(list.map(a => [a.id, a]))
@@ -355,6 +361,7 @@ function changes(prev: Snapshot | undefined, now: Snapshot): string {
 
 // Today's schedule. Until the connector is there, try again every 15 seconds.
 async function refreshCalendar($: Api): Promise<void> {
+  if (isDemo) return
   const tools = await $.tool.list()
   const tool = tools.find(t => CALENDAR.test(t.name))?.name
   if (!tool) {
@@ -394,7 +401,7 @@ async function refreshCalendar($: Api): Promise<void> {
 // ---------------------------------------------------------------- refresh
 
 async function refresh($: Api): Promise<void> {
-  if (isRunning) return
+  if (isRunning || isDemo) return
   isRunning = true
   try {
     await $.ui.status('forge: refreshing')
@@ -503,6 +510,7 @@ async function refresh($: Api): Promise<void> {
 // session.start and with the session's values gone. Put the last board back
 // at once, then refresh.
 async function restore($: Api): Promise<void> {
+  isDemo = false
   const saved = (await $.store.get('lastBoard')) as Board | undefined
   if (saved) await update($, board, () => saved)
   lastSubagents = ''
@@ -771,6 +779,96 @@ function bannerRows(width: number, seed: number, frame: number, isDay: boolean):
   return rows
 }
 
+// ---------------------------------------------------------------- demo
+
+const DEMO_URL = 'https://github.com/girdharshubham/forge'
+const demoRef = (text: string): Ref => ({ text, url: DEMO_URL })
+const demoPr = (text: string, title: string, extra: Partial<Pr> = {}): Pr => ({
+  ref: demoRef(text),
+  title,
+  isDraft: false,
+  repo: text.split('#')[0],
+  day: '',
+  ...extra,
+})
+
+const DEMO_SUBAGENTS: Agent[] = [
+  { title: 'Review the release notes', detail: 'general-purpose', depth: 0, status: 'WORKING' },
+  { title: 'Find broken links in the docs', detail: 'Explore', depth: 1, status: 'WORKING' },
+  { title: 'Run the integration tests', detail: 'general-purpose', depth: 0, status: 'WAITING' },
+]
+
+// Made-up work around the given moment: a meeting that ended, one under way,
+// the next one, and a skipped standup.
+function demoBoard(now: number): Board {
+  const at = localDate(now)
+  const minute = 60_000
+  const meeting = (title: string, from: number, to: number, note = ''): Meeting => ({
+    time: localDate(now + from * minute).toISOString().slice(11, 16),
+    title,
+    minutes: to - from,
+    note,
+    isPast: to < 0,
+    startMs: now + from * minute,
+    endMs: now + to * minute,
+  })
+  const day = (offset: number) => localDate(now - offset * 24 * 60 * minute).toISOString().slice(0, 10)
+
+  return {
+    updated: `${WEEKDAYS[at.getUTCDay()]} ${at.getUTCDate()} ${MONTHS[at.getUTCMonth()]}, ${at.toISOString().slice(11, 16)} ${TZ_LABEL}`,
+    changed: 'Sample data for screenshots. Run /forge-demo again to go back.',
+    errors: [],
+    agents: [],
+    today: {
+      label: `${WEEKDAYS[at.getUTCDay()]} ${at.getUTCDate()} ${MONTHS[at.getUTCMonth()]}`,
+      meetings: [
+        meeting('Team standup', -180, -165, 'skipped'),
+        meeting('Design review: search', -120, -90),
+        meeting('Pairing on the deploy script', -10, 20),
+        meeting('Release planning', 90, 120, 'no reply'),
+        meeting('One-on-one', 240, 270),
+      ],
+    },
+    next: null,
+    later: [],
+    tasks: [
+      { isDone: false, ref: demoRef('app#128'), title: 'feat: add the status page', source: 'your PR' },
+      { isDone: false, ref: demoRef('app#140'), title: 'Cache misses after a restart', source: 'issue' },
+      { isDone: false, ref: demoRef('infra#71'), title: 'Pin the build image to a digest', source: 'issue' },
+      { isDone: true, ref: demoRef('infra#65'), title: 'Docs build fails on a clean checkout', source: 'issue, closed' },
+    ],
+    reviews: [
+      demoPr('app#131', 'feat: add search to the docs site'),
+      demoPr('app#126', 'fix: keep the session after a refresh'),
+      demoPr('web#57', 'chore: move to the new icons', { isDraft: true }),
+      demoPr('api#212', 'feat: page the list endpoint'),
+    ],
+    prs: [
+      demoPr('app#128', 'feat: add the status page', { ci: 'pass', review: 'approved' }),
+      demoPr('api#204', 'fix: retry the login call', { ci: 'fail', review: 'changes requested' }),
+      demoPr('infra#77', 'chore: pin the build image', { ci: 'running', review: 'waiting for review' }),
+      demoPr('web#61', 'feat: dark theme', { isDraft: true, ci: 'pass' }),
+      demoPr('docs#19', 'docs: explain the setup', { isDraft: true, ci: 'none' }),
+    ],
+    issues: [
+      { repo: 'app', count: 12, epics: [demoRef('app#90')], recent: [demoRef('app#140'), demoRef('app#139')] },
+      { repo: 'infra', count: 4, epics: [], recent: [demoRef('infra#71'), demoRef('infra#69')] },
+    ],
+    issueCount: 16,
+    merged: [
+      demoPr('app#124', 'feat: show build times', { day: day(0) }),
+      demoPr('api#201', 'fix: close idle connections', { day: day(1) }),
+      demoPr('infra#74', 'chore: rotate the staging certificate', { day: day(2) }),
+      demoPr('app#119', 'fix: sort the table by date', { day: day(4) }),
+      demoPr('web#55', 'feat: add the empty state', { day: day(6) }),
+      demoPr('api#198', 'chore: update the client library', { day: day(9) }),
+    ],
+    mergedUrl: DEMO_URL,
+    seed: 7,
+    calendarNote: '',
+  }
+}
+
 // ---------------------------------------------------------------- module
 
 // This computer's time zone and its short name: the runtime's own zone first,
@@ -822,6 +920,7 @@ export const register: Register = (on, options) => {
     }
     await $.command.register({ name: 'forge', description: 'Open the Forge status board' })
     await $.command.register({ name: 'forge-refresh', description: 'Refresh the Forge status board now' })
+    await $.command.register({ name: 'forge-demo', description: 'Show Forge with sample data, for screenshots; run again to go back' })
     $.clock.every(EVERY_MS, () => void refresh($))
     $.clock.every(SUBAGENTS_MS, () => {
       void pollSubagents($).catch(() => undefined)
@@ -836,7 +935,7 @@ export const register: Register = (on, options) => {
           for (const m of b.today?.meetings ?? []) {
             const start = m.startMs ?? 0
             const key = `${start}:${m.title}`
-            if (m.note === 'skipped' || meetingAlerts.has(key)) continue
+            if (isDemo || m.note === 'skipped' || meetingAlerts.has(key)) continue
             if (start - now > 0 && start - now <= 5 * 60_000) {
               meetingAlerts.add(key)
               alert($, `Starts in 5 minutes: ${m.title}`)
@@ -873,6 +972,28 @@ export const register: Register = (on, options) => {
     await openPane($, e.presentation?.columns ? share(e.presentation.columns) : undefined)
 
     return { text: 'Forge is refreshing.' }
+  })
+
+  on('command.run', { command: 'forge-demo' }, async ($, e) => {
+    if (!isDemo) {
+      realBoard = await read($, board)
+      realSubagents = await read($, subagents)
+      isDemo = true
+      const now = await $.clock.now()
+      await update($, board, () => demoBoard(now))
+      await update($, subagents, () => DEMO_SUBAGENTS)
+      await openPane($, e.presentation?.columns ? share(e.presentation.columns) : undefined)
+
+      return { text: 'Forge shows sample data. Run /forge-demo again to go back.' }
+    }
+    isDemo = false
+    if (realBoard) await update($, board, () => realBoard as Board)
+    await update($, subagents, () => realSubagents ?? [])
+    lastSubagents = ''
+    void pollSubagents($).catch(() => undefined)
+    void refresh($)
+
+    return { text: 'Forge shows your data again.' }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {

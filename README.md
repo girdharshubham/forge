@@ -56,4 +56,5 @@ Apache-2.0. See `LICENSE`.
 
 - `/forge` opens the pane.
 - `/forge-refresh` refreshes the board now.
+- `/forge-demo` fills the pane with sample data, for screenshots and demos. Nothing real is read or shown while it is on. Run it again to go back.
 - In the pane, `r` refreshes and `g` hides or shows the GitHub section.

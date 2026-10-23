@@ -315,3 +315,33 @@ test('an empty time zone label comes from this computer', { options: { timeZone:
   expect(await ui.find({ type: 'Text', text: /\(CEST\)/ })).toBeTruthy()
   await ui.unmount()
 })
+
+test('demo mode shows sample data and goes back', async ($, on) => {
+  on('command.register', (_, e) => ({ value: { command: e.name } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.status', () => ({ value: undefined }))
+  on('clock.every', () => ({ deny: 'no timers in the test' }))
+  on('clock.after', () => ({ deny: 'no timers in the test' }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('process.run', () => ({ value: { exitCode: 0, stdout: '[]', stderr: '' } }))
+  on('tool.list', () => ({ value: [] }))
+  on('clock.now', () => ({ value: NOW }))
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('agent.list', () => ({ value: [] }))
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await new Promise(r => setTimeout(r, 50))
+
+  await $.command.run({ command: 'forge-demo', args: '' } as never)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /Review the release notes/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /Pairing on the deploy script/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /changes requested/ })).toBeTruthy()
+  await ui.unmount()
+
+  await $.command.run({ command: 'forge-demo', args: '' } as never)
+  const back = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await back.find({ type: 'Text', text: /Review the release notes/ })).toBeFalsy()
+  await back.unmount()
+})
