@@ -245,12 +245,26 @@ async function events($: Api, tool: string, from: string, to: string): Promise<C
 }
 
 // This session's subagents, read often: they start and end within minutes.
+// A subagent that has finished its task goes idle until a message wakes it,
+// so idle counts as done and drops off; a teammate idles while it waits for
+// a message, so it stays. A failed one stays ten minutes, then drops off.
+const FAILED_SHOWN_MS = 10 * 60 * 1000
+const failedAt = new Map<string, number>()
+
 async function pollSubagents($: Api): Promise<void> {
   const list = await $.agent.list()
+  const now = await $.clock.now()
   const byId = new Map(list.map(a => [a.id, a]))
   const depth = (id?: string): number => (id && byId.has(id) ? 1 + depth(byId.get(id)?.parentId) : 0)
+  const isDone = (a: (typeof list)[number]) =>
+    a.status === 'completed' || a.status === 'killed' || (a.status === 'idle' && !a.teammateId)
+  for (const a of list) {
+    if (a.status === 'failed' && !failedAt.has(a.id)) failedAt.set(a.id, now)
+    if (a.status !== 'failed') failedAt.delete(a.id)
+  }
   const live: Agent[] = list
-    .filter(a => a.status !== 'completed' && a.status !== 'killed')
+    .filter(a => !isDone(a))
+    .filter(a => a.status !== 'failed' || now - (failedAt.get(a.id) ?? now) < FAILED_SHOWN_MS)
     .map(a => ({
       id: a.id,
       title: a.description || a.name || a.type,
@@ -258,14 +272,15 @@ async function pollSubagents($: Api): Promise<void> {
       depth: depth(a.parentId),
       status: a.status === 'failed' ? 'BLOCKED' : a.status === 'waiting' || a.status === 'idle' ? 'WAITING' : 'WORKING',
     }))
-  const seen = new Map(list.map(a => [a.id, a.status as string]))
+  const seen = new Map(list.map(a => [a.id, isDone(a) ? 'done' : (a.status as string)]))
   if (subagentStatus) {
     for (const a of list) {
       const was = subagentStatus.get(a.id)
+      const state = seen.get(a.id)
       const title = a.description || a.name || a.type
-      if (was === a.status) continue
-      if (a.status === 'completed' && was !== undefined) alert($, `Subagent finished: ${title}`)
-      if (a.status === 'failed') alert($, `Subagent failed: ${title}`)
+      if (was === state || was === undefined) continue
+      if (state === 'done') alert($, `Subagent finished: ${title}`)
+      if (state === 'failed') alert($, `Subagent failed: ${title}`)
     }
   }
   subagentStatus = seen

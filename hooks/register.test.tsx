@@ -129,6 +129,8 @@ test('running subagents of this session show, finished ones do not', async ($, o
       { id: 'a1', description: 'Review remote inference PR', type: 'general-purpose', status: 'running' },
       { id: 'a2', description: 'Search farm runbooks', type: 'Explore', status: 'running', parentId: 'a1' },
       { id: 'a3', description: 'Finished search', type: 'Explore', status: 'completed' },
+      { id: 'a4', description: 'Idle after its task', type: 'Explore', status: 'idle' },
+      { id: 'a5', description: 'Teammate on hold', type: 'teammate', status: 'idle', teammateId: 'pat@team' },
     ],
   }))
 
@@ -139,6 +141,8 @@ test('running subagents of this session show, finished ones do not', async ($, o
   expect(await ui.find({ type: 'Text', text: /Review remote inference PR/ })).toBeTruthy()
   expect(await ui.find({ type: 'Text', text: /Search farm runbooks/ })).toBeTruthy()
   expect(await ui.find({ type: 'Text', text: /Finished search/ })).toBeFalsy()
+  expect(await ui.find({ type: 'Text', text: /Idle after its task/ })).toBeFalsy()
+  expect(await ui.find({ type: 'Text', text: /Teammate on hold/ })).toBeTruthy()
   await ui.press({ key: 'sub-a1' })
   expect(viewed).toBe('a1')
   await ui.unmount()
