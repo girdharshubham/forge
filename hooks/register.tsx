@@ -101,6 +101,8 @@ let realZone = { zone: 'UTC', label: 'UTC' }
 // The demo's own clock and zone, so a screenshot shows neither your time nor
 // your time zone: a fixed Thursday morning in UTC, under the night sky.
 const DEMO_NOW = Date.parse('2026-01-15T10:20:00Z')
+// A shooting star every 5 beats, 15 seconds, so a short recording catches one.
+const DEMO_STAR_EVERY = 5
 let calendarTries = 0
 let isCalendarWaiting = false
 let lastSubagents = ''
@@ -623,7 +625,8 @@ const TRAIL = [WHITE, '#d0d0ff', '#8a8ac0', FAINT]
 // seed: where the stars sit, new on every refresh. frame: the 3 second beat that
 // twinkles them, sends a shooting star now and then, and makes the saber hum.
 // isDay: 07:00 to 18:00 local time, a blue sky with a sun and clouds.
-function bannerRows(width: number, seed: number, frame: number, isDay: boolean): Seg[][] {
+// starEvery: beats between shooting stars, 40 (about two minutes) by default.
+function bannerRows(width: number, seed: number, frame: number, isDay: boolean, starEvery = 40): Seg[][] {
   const full = DUCK_W + 3 + WORD_W + 4 + MOON_W
   const withDuck = DUCK_W + 3 + WORD_W
   if (width < WORD_W + 2) return [[{ t: ' FORGE ', c: ORANGE, bg: NAVY, b: true }]]
@@ -676,10 +679,10 @@ function bannerRows(width: number, seed: number, frame: number, isDay: boolean):
       }
     }
 
-    // A shooting star for a few beats about every two minutes.
-    const period = 40
+    // A shooting star for a few beats, every starEvery beats.
+    const period = starEvery
     const beat = frame % period
-    if (beat < 6) {
+    if (beat < Math.min(6, period - 1)) {
       const run = Math.floor(frame / period)
       const x0 = Math.floor(hash(run, 7) * width * 0.6)
       const y0 = Math.floor(hash(run, 11) * 3)
@@ -1143,7 +1146,7 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column" width={width}>
-        {bannerRows(width, b.seed, frame, !isDemo && localHour >= 7 && localHour < 18).map(row => (
+        {bannerRows(width, b.seed, frame, !isDemo && localHour >= 7 && localHour < 18, isDemo ? DEMO_STAR_EVERY : 40).map(row => (
           <Text wrap="truncate-end">
             {row.map(s => (
               <Text color={s.c} backgroundColor={s.bg ?? NAVY} bold={s.b === true}>
