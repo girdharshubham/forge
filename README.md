@@ -40,8 +40,8 @@ Set these when you install, or later in the config menu.
 | Option | What it sets | Default |
 | --- | --- | --- |
 | GitHub orgs | Comma-separated orgs or users to search. Empty searches all of GitHub. | empty |
-| Time zone | The IANA time zone for the schedule and the banner, such as `Europe/Berlin`. | `UTC` |
-| Time zone label | The short name shown next to times, such as `CET`. Empty shows the time zone. | empty |
+| Time zone | The IANA time zone for the schedule and the banner, such as `Europe/Berlin`. Empty uses this computer's time zone. | empty |
+| Time zone label | The short name shown next to times, such as `CET`. Empty uses this computer's short name, or the time zone when you set one. | empty |
 | Repo short names | Comma-separated `owner/repo=name` pairs that shorten long repository names. | empty |
 
 ## License

@@ -758,6 +758,26 @@ function bannerRows(width: number, seed: number, frame: number, isDay: boolean):
 
 // ---------------------------------------------------------------- module
 
+// This computer's time zone and its short name: the runtime's own zone first,
+// then where /etc/localtime points, and the label from date(1).
+async function computerZone($: Api): Promise<{ zone: string; label: string }> {
+  let zone = ''
+  try {
+    zone = Intl.DateTimeFormat().resolvedOptions().timeZone ?? ''
+  } catch {
+    zone = ''
+  }
+  if (zone === '' || zone === 'UTC' || zone === 'Etc/UTC') {
+    const link = await $.process.run(['readlink', '/etc/localtime']).catch(() => undefined)
+    const found = link?.exitCode === 0 ? link.stdout.trim().match(/zoneinfo\/(.+)$/) : null
+    if (found) zone = found[1]
+  }
+  const date = await $.process.run(['date', '+%Z']).catch(() => undefined)
+  const label = date?.exitCode === 0 ? date.stdout.trim() : ''
+
+  return { zone: zone || 'UTC', label: /^[A-Za-z0-9+-]{1,6}$/.test(label) ? label : '' }
+}
+
 const splitList = (value: unknown) =>
   String(value ?? '')
     .split(',')
@@ -766,8 +786,11 @@ const splitList = (value: unknown) =>
 
 export const register: Register = (on, options) => {
   ORGS = splitList(options.githubOrgs)
-  TZ = String(options.timeZone ?? '').trim() || 'UTC'
-  TZ_LABEL = String(options.timeZoneLabel ?? '').trim() || TZ
+  // An empty time zone or label is filled from this computer at session start.
+  const zoneOption = String(options.timeZone ?? '').trim()
+  const labelOption = String(options.timeZoneLabel ?? '').trim()
+  TZ = zoneOption || 'UTC'
+  TZ_LABEL = labelOption || TZ
   ALIASES = new Map(
     splitList(options.repoShortNames)
       .map(pair => pair.split('=').map(x => x.trim()))
@@ -776,6 +799,12 @@ export const register: Register = (on, options) => {
   )
 
   on('session.start', async ($, e, next) => {
+    if (zoneOption === '' || labelOption === '') {
+      const computer = await computerZone($).catch(() => ({ zone: 'UTC', label: '' }))
+      if (zoneOption === '') TZ = computer.zone
+      // The computer's short name fits only its own zone.
+      if (labelOption === '') TZ_LABEL = zoneOption === '' && computer.label !== '' ? computer.label : TZ
+    }
     await $.command.register({ name: 'forge', description: 'Open the Forge status board' })
     await $.command.register({ name: 'forge-refresh', description: 'Refresh the Forge status board now' })
     $.clock.every(EVERY_MS, () => void refresh($))

@@ -283,3 +283,31 @@ test('times follow the time zone option', { options: { timeZone: 'Europe/Berlin'
   expect(await ui.find({ type: 'Text', text: /\(CEST\)/ })).toBeTruthy()
   await ui.unmount()
 })
+
+test('an empty time zone label comes from this computer', { options: { timeZone: '', timeZoneLabel: '' } }, async ($, on) => {
+  on('command.register', (_, e) => ({ value: { command: e.name } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.status', () => ({ value: undefined }))
+  on('clock.every', () => ({ deny: 'no timers in the test' }))
+  on('clock.after', () => ({ deny: 'no timers in the test' }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('process.run', (_, e) => {
+    if (e.argv[0] === 'readlink') return { value: { exitCode: 0, stdout: '/usr/share/zoneinfo/Europe/Berlin\n', stderr: '' } }
+    if (e.argv[0] === 'date') return { value: { exitCode: 0, stdout: 'CEST\n', stderr: '' } }
+
+    return { value: { exitCode: 0, stdout: '[]', stderr: '' } }
+  })
+  on('tool.list', () => ({ value: [{ name: 'mcp__claude_ai_Google_Calendar__list_events' }] }))
+  on('tool.call', () => ({ result: {}, text: JSON.stringify(CALENDAR) }))
+  on('clock.now', () => ({ value: NOW }))
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('agent.list', () => ({ value: [] }))
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await new Promise(r => setTimeout(r, 50))
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /\(CEST\)/ })).toBeTruthy()
+  await ui.unmount()
+})
