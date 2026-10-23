@@ -1,6 +1,6 @@
 {
   "name": "forge",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "A status board in a pane beside the chat: this session's subagents, today's schedule, and your GitHub work",
   "types": "./types/index.d.ts",
   "userConfig": {

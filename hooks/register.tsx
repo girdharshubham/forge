@@ -88,8 +88,11 @@ const subagents = atom({ plugin: 'forge', key: 'subagents' } as const, [] as Age
 // The clock, one value a frame, so the banner and the schedule move on their own.
 const clock = atom({ plugin: 'forge', key: 'now' } as const, 0, { shape: 'now-1' })
 const githubHidden = atom({ plugin: 'forge', key: 'githubHidden' } as const, false, { shape: 'hidden-1' })
+// The step of the duck's saber routine, -1 while it stands on guard.
+const fu = atom({ plugin: 'forge', key: 'fu' } as const, -1, { shape: 'fu-1' })
 
 let isRunning = false
+let fuTimer: { cancel: () => void } | undefined
 // Demo mode: sample data for screenshots. While it is on, nothing real is read,
 // drawn or alerted, and the real board waits here.
 let isDemo = false
@@ -538,6 +541,8 @@ async function restore($: Api): Promise<void> {
 // The banner is a pixel canvas, two pixels to a cell: '▀' paints the top
 // pixel in the text color and the bottom pixel in the background color.
 type Seg = { t: string; c: string; bg?: string; b?: boolean }
+// The banner's rows, and the columns the duck takes, for its click.
+type Banner = { rows: Seg[][]; duck: [number, number] | null }
 type Canvas = string[][]
 
 const SHADOW = '#870000'
@@ -587,6 +592,29 @@ const DUCK_COLORS: Record<string, string> = {
   D: '#585858',
 }
 const DUCK_W = 16
+// The duck without its saber, for the routine, which draws the saber itself.
+const BODY_SPRITE = DUCK_SPRITE.map(row => row.replace(/[GBHD]/g, '.'))
+// Lightsaber-fu: the blade's angle in degrees (-90 points up, 0 right; it
+// never drops below -35, so it points up and away from the body), a hop, and a spark.
+type Pose = { angle: number; hop?: number; spark?: boolean }
+const FU_POSES: Pose[] = [
+  { angle: -90 },
+  { angle: -115 },
+  { angle: -140 },
+  { angle: -160 },
+  { angle: -60 },
+  { angle: -40, hop: 1 },
+  { angle: -35, hop: 1, spark: true },
+  { angle: -35, hop: 1, spark: true },
+  { angle: -45 },
+  { angle: -130 },
+  { angle: -150 },
+  { angle: -50, hop: 1 },
+  { angle: -35, hop: 1, spark: true },
+  { angle: -60 },
+  { angle: -90 },
+]
+const FU_MS = 120
 const MOON_W = 11
 
 function rng(seed: number) {
@@ -626,10 +654,11 @@ const TRAIL = [WHITE, '#d0d0ff', '#8a8ac0', FAINT]
 // twinkles them, sends a shooting star now and then, and makes the saber hum.
 // isDay: 07:00 to 18:00 local time, a blue sky with a sun and clouds.
 // starEvery: beats between shooting stars, 40 (about two minutes) by default.
-function bannerRows(width: number, seed: number, frame: number, isDay: boolean, starEvery = 40): Seg[][] {
+// fu: the step of the saber routine, -1 on guard.
+function bannerRows(width: number, seed: number, frame: number, isDay: boolean, starEvery = 40, fuStep = -1): Banner {
   const full = DUCK_W + 3 + WORD_W + 4 + MOON_W
   const withDuck = DUCK_W + 3 + WORD_W
-  if (width < WORD_W + 2) return [[{ t: ' FORGE ', c: ORANGE, bg: NAVY, b: true }]]
+  if (width < WORD_W + 2) return { rows: [[{ t: ' FORGE ', c: ORANGE, bg: NAVY, b: true }]], duck: null }
   const hasDuck = width >= withDuck + 2
   const hasMoon = width >= full + 2
   const groupW = hasMoon ? full : hasDuck ? withDuck : WORD_W
@@ -763,15 +792,55 @@ function bannerRows(width: number, seed: number, frame: number, isDay: boolean, 
     )
   })
 
-  if (hasDuck) {
+  // The saber hums: core and glow brighten on alternate beats.
+  const hum = frame % 2 === 0
+  const core = hum ? WHITE : DUCK_COLORS.B
+  const glow = hum ? '#87ff87' : GREEN
+  const pose = fuStep >= 0 ? FU_POSES[Math.min(fuStep, FU_POSES.length - 1)] : undefined
+  if (hasDuck && !pose) {
     DUCK_SPRITE.forEach((row, ry) =>
       row.split('').forEach((px, rx) => {
-        // The saber hums: core and glow brighten on alternate beats.
-        const hum = frame % 2 === 0
-        const c = px === 'B' ? (hum ? WHITE : DUCK_COLORS.B) : px === 'G' ? (hum ? '#87ff87' : GREEN) : DUCK_COLORS[px]
+        const c = px === 'B' ? core : px === 'G' ? glow : DUCK_COLORS[px]
         if (c) put(duckX + rx, ry, c)
       }),
     )
+  }
+  if (hasDuck && pose) {
+    const lift = pose.hop ?? 0
+    const body = () =>
+      BODY_SPRITE.forEach((row, ry) =>
+        row.split('').forEach((px, rx) => {
+          const c = DUCK_COLORS[px]
+          if (c) put(duckX + rx, ry - lift, c)
+        }),
+      )
+    const saber = () => {
+      const rad = (pose.angle * Math.PI) / 180
+      const dx = Math.cos(rad)
+      const dy = Math.sin(rad)
+      const at = (k: number): [number, number] => [Math.round(duckX + 14 + dx * k), Math.round(8 - lift + dy * k)]
+      // The glow rings the blade on every side, so a diagonal blade has no gaps.
+      for (let k = 1; k <= 7; k++) {
+        const [x, y] = at(k)
+        for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++) put(x + ox, y + oy, glow)
+      }
+      for (let k = 1; k <= 7; k++) put(...at(k), core)
+      put(...at(0), DUCK_COLORS.H)
+      put(...at(-1), DUCK_COLORS.D)
+      if (pose.spark) {
+        const [x, y] = at(9)
+        put(x, y, WHITE)
+        for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) put(x + ox, y + oy, YELLOW)
+      }
+    }
+    // A blade swung back passes behind the head; one in front, over the body.
+    if (pose.angle < -100) {
+      saber()
+      body()
+    } else {
+      body()
+      saber()
+    }
   }
 
   // Two pixel rows to a cell, runs of the same pair joined into one segment.
@@ -789,7 +858,41 @@ function bannerRows(width: number, seed: number, frame: number, isDay: boolean, 
     rows.push(segs)
   }
 
-  return rows
+  return { rows, duck: hasDuck ? [duckX, duckX + DUCK_W] : null }
+}
+
+// The cells from column `from` to `to` of a banner row.
+function sliceRow(row: Seg[], from: number, to: number): Seg[] {
+  const out: Seg[] = []
+  let col = 0
+  for (const seg of row) {
+    const start = Math.max(from, col)
+    const end = Math.min(to, col + seg.t.length)
+    if (end > start) out.push({ ...seg, t: seg.t.slice(start - col, end - col) })
+    col += seg.t.length
+  }
+
+  return out
+}
+
+// ---------------------------------------------------------------- saber-fu
+
+// A click on the duck plays the routine once; a click during it does nothing.
+async function saberFu($: Api): Promise<void> {
+  if (fuTimer) return
+  let step = 0
+  await update($, fu, () => step)
+  fuTimer = $.clock.every(FU_MS, () => {
+    step += 1
+    if (step >= FU_POSES.length) {
+      fuTimer?.cancel()
+      fuTimer = undefined
+      void update($, fu, () => -1)
+
+      return
+    }
+    void update($, fu, () => step)
+  })
 }
 
 // ---------------------------------------------------------------- demo
@@ -960,6 +1063,7 @@ export const register: Register = (on, options) => {
     tick()
     const saved = (await $.store.get('lastBoard')) as Board | undefined
     if (saved) await update($, board, () => saved)
+    await update($, fu, () => -1)
     void pollSubagents($).catch(() => undefined)
     void refresh($)
     void openPane($)
@@ -1019,6 +1123,7 @@ export const register: Register = (on, options) => {
     const subs = await read($, subagents)
     const nowRead = await read($, clock)
     const isGithubHidden = await read($, githubHidden)
+    const fuStep = await read($, fu)
     const props = e.props as { bodyColumns?: number }
     const width = Math.max(24, props.bodyColumns ?? e.viewport?.columns ?? 80)
     if (e.viewport?.isFullscreen && e.viewport.columns > 0) wantColumns = share(e.viewport.columns)
@@ -1134,6 +1239,13 @@ export const register: Register = (on, options) => {
       return [...map.entries()]
     }
     const ready = b.prs.filter(p => !p.isDraft)
+    const banner = bannerRows(width, b.seed, frame, !isDemo && localHour >= 7 && localHour < 18, isDemo ? DEMO_STAR_EVERY : 40, fuStep)
+    const cells = (segs: Seg[]) =>
+      segs.map(s => (
+        <Text color={s.c} backgroundColor={s.bg ?? NAVY} bold={s.b === true}>
+          {s.t}
+        </Text>
+      ))
     const working = subs.filter(a => a.status === 'WORKING').length
     const failing = b.prs.filter(p => p.ci === 'fail').length
     const nextMeeting = nextIndex >= 0 ? meetings[nextIndex] : undefined
@@ -1146,15 +1258,19 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column" width={width}>
-        {bannerRows(width, b.seed, frame, !isDemo && localHour >= 7 && localHour < 18, isDemo ? DEMO_STAR_EVERY : 40).map(row => (
-          <Text wrap="truncate-end">
-            {row.map(s => (
-              <Text color={s.c} backgroundColor={s.bg ?? NAVY} bold={s.b === true}>
-                {s.t}
-              </Text>
-            ))}
-          </Text>
-        ))}
+        {banner.rows.map((row, r) =>
+          banner.duck && r < 7 ? (
+            <Box>
+              <Text wrap="truncate-end">{cells(sliceRow(row, 0, banner.duck[0]))}</Text>
+              <Button key={`duck-${r}`} plain onPress={() => saberFu($)}>
+                {cells(sliceRow(row, banner.duck[0], banner.duck[1]))}
+              </Button>
+              <Text wrap="truncate-end">{cells(sliceRow(row, banner.duck[1], width))}</Text>
+            </Box>
+          ) : (
+            <Text wrap="truncate-end">{cells(row)}</Text>
+          ),
+        )}
         <Text wrap="truncate-end">
           <Text color={YELLOW} bold>{`${b.reviews.length} reviews`}</Text>
           <Text color={FAINT}>{'  '}</Text>
@@ -1175,6 +1291,10 @@ export const register: Register = (on, options) => {
           <Text>{'   '}</Text>
           <Button key="github" hotkey="g" plain onPress={() => update($, githubHidden, v => !v)}>
             <Text color={CYAN}>{isGithubHidden ? 'Show GitHub' : 'Hide GitHub'}</Text>
+          </Button>
+          <Text>{'   '}</Text>
+          <Button key="saber" hotkey="d" plain onPress={() => saberFu($)}>
+            <Text color={GREEN}>Saber-fu</Text>
           </Button>
         </Box>
         <Text>

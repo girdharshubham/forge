@@ -29,6 +29,6 @@ export type Board = {
 
 declare module 'claude-code' {
   interface PluginState {
-    forge: { board: Shaped<Board>; subagents: Shaped<Agent[]>; now: Shaped<number>; githubHidden: Shaped<boolean> }
+    forge: { board: Shaped<Board>; subagents: Shaped<Agent[]>; now: Shaped<number>; githubHidden: Shaped<boolean>; fu: Shaped<number> }
   }
 }

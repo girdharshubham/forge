@@ -381,3 +381,34 @@ test('a calendar read that ends during the demo leaves the demo alone', async ($
   expect(await ui.find({ type: 'Text', text: /Project check-in/ })).toBeFalsy()
   await ui.unmount()
 })
+
+test('a click on the duck or the Saber-fu button starts the routine', async ($, on) => {
+  let steps = 0
+  on('command.register', (_, e) => ({ value: { command: e.name } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.status', () => ({ value: undefined }))
+  on('clock.every', () => {
+    steps += 1
+
+    return { deny: 'no timers in the test' }
+  })
+  on('clock.after', () => ({ deny: 'no timers in the test' }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('process.run', () => ({ value: { exitCode: 0, stdout: '[]', stderr: '' } }))
+  on('tool.list', () => ({ value: [] }))
+  on('clock.now', () => ({ value: NOW }))
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('agent.list', () => ({ value: [] }))
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await new Promise(r => setTimeout(r, 30))
+  const before = steps
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /Saber-fu/ })).toBeTruthy()
+  await ui.press({ key: 'duck-3' })
+  // The routine asks for its own timer.
+  expect(steps).toBe(before + 1)
+  await ui.unmount()
+})
