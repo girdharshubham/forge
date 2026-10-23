@@ -1,0 +1,36 @@
+{
+  "name": "forge",
+  "version": "0.2.0",
+  "description": "A status board in a pane beside the chat: this session's subagents, today's schedule, and your GitHub work",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "githubOrgs": {
+      "type": "string",
+      "title": "GitHub orgs",
+      "description": "Comma-separated GitHub orgs or users to search for your PRs, reviews and issues. Empty searches all of GitHub.",
+      "default": ""
+    },
+    "timeZone": {
+      "type": "string",
+      "title": "Time zone",
+      "description": "IANA time zone for the schedule, the clock and day or night in the banner, such as Europe/Berlin.",
+      "default": "UTC"
+    },
+    "timeZoneLabel": {
+      "type": "string",
+      "title": "Time zone label",
+      "description": "The short name shown next to times, such as CET. Empty shows the time zone itself.",
+      "default": ""
+    },
+    "repoShortNames": {
+      "type": "string",
+      "title": "Repo short names",
+      "description": "Comma-separated owner/repo=name pairs that shorten long repository names in the pane.",
+      "default": ""
+    }
+  },
+  "author": {
+    "name": "girdharshubham"
+  },
+  "license": "Apache-2.0"
+}
