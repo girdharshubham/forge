@@ -44,6 +44,10 @@ Set these when you install, or later in the config menu.
 | Time zone label | The short name shown next to times, such as `CET`. Empty uses this computer's short name, or the time zone when you set one. | empty |
 | Repo short names | Comma-separated `owner/repo=name` pairs that shorten long repository names. | empty |
 
+## Support Forge
+
+Forge is free. If it saves you time, you can sponsor its upkeep at https://github.com/sponsors/girdharshubham.
+
 ## License
 
 Apache-2.0. See `LICENSE`.
