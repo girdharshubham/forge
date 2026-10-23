@@ -96,6 +96,8 @@ let isDemo = false
 let realBoard: Board | undefined
 let realSubagents: Agent[] | undefined
 let realZone = { zone: 'UTC', label: 'UTC' }
+// Work that started before the demo may finish during it, so every write of
+// real data checks isDemo at the moment it lands and leaves the demo alone.
 // The demo's own clock and zone, so a screenshot shows neither your time nor
 // your time zone: a fixed Thursday morning in UTC, under the night sky.
 const DEMO_NOW = Date.parse('2026-01-15T10:20:00Z')
@@ -297,7 +299,7 @@ async function pollSubagents($: Api): Promise<void> {
   const json = JSON.stringify(live)
   if (json === lastSubagents) return
   lastSubagents = json
-  await update($, subagents, () => live)
+  await update($, subagents, old => (isDemo ? old : live))
 }
 
 // ---------------------------------------------------------------- dates
@@ -378,7 +380,7 @@ async function refreshCalendar($: Api): Promise<void> {
         void refreshCalendar($).catch(() => undefined)
       })
     }
-    await update($, board, b => ({
+    await update($, board, b => (isDemo ? b : {
       ...b,
       calendarNote: isGivingUp
         ? 'The Google Calendar connector is not connected in this session.'
@@ -395,10 +397,10 @@ async function refreshCalendar($: Api): Promise<void> {
     const meetings = (meetingsByDay(list, now).get(today) ?? []).sort((a, b) => (a.startMs ?? 0) - (b.startMs ?? 0))
     const d = new Date(`${today}T00:00:00Z`)
     const label = `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`
-    await update($, board, b => ({ ...b, today: { label, meetings }, next: null, later: [], calendarNote: '' }))
+    await update($, board, b => (isDemo ? b : { ...b, today: { label, meetings }, next: null, later: [], calendarNote: '' }))
   } catch (err) {
     const text = err instanceof Error ? err.message : String(err)
-    await update($, board, b => ({ ...b, calendarNote: `Calendar failed: ${text}` }))
+    await update($, board, b => (isDemo ? b : { ...b, calendarNote: `Calendar failed: ${text}` }))
   }
 }
 
@@ -497,13 +499,13 @@ async function refresh($: Api): Promise<void> {
       seed,
     }
     // Meetings come from refreshCalendar; keep what it found last.
-    await update($, board, old => ({ ...next, today: old.today, next: old.next, later: old.later, calendarNote: old.calendarNote }))
+    await update($, board, old => (isDemo ? old : { ...next, today: old.today, next: old.next, later: old.later, calendarNote: old.calendarNote }))
     await refreshCalendar($).catch(async (err: unknown) => {
       const text = err instanceof Error ? err.message : String(err)
-      await update($, board, b => ({ ...b, calendarNote: `Calendar failed: ${text}` }))
+      await update($, board, b => (isDemo ? b : { ...b, calendarNote: `Calendar failed: ${text}` }))
     })
     // Keep only a board whose sources all answered, so a bad refresh is not what comes back.
-    if (errors.length === 0) await $.store.set('lastBoard', await read($, board))
+    if (errors.length === 0 && !isDemo) await $.store.set('lastBoard', await read($, board))
     await $.ui.status(undefined)
   } finally {
     isRunning = false

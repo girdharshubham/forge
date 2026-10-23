@@ -347,3 +347,37 @@ test('demo mode shows sample data and goes back', async ($, on) => {
   expect(await back.find({ type: 'Text', text: /Review the release notes/ })).toBeFalsy()
   await back.unmount()
 })
+
+test('a calendar read that ends during the demo leaves the demo alone', async ($, on) => {
+  on('command.register', (_, e) => ({ value: { command: e.name } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.status', () => ({ value: undefined }))
+  on('clock.every', () => ({ deny: 'no timers in the test' }))
+  on('clock.after', () => ({ deny: 'no timers in the test' }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('process.run', () => ({ value: { exitCode: 0, stdout: '[]', stderr: '' } }))
+  on('tool.list', () => ({ value: [{ name: 'mcp__claude_ai_Google_Calendar__list_events' }] }))
+  let calendarStarted: () => void = () => undefined
+  const started = new Promise<void>(r => (calendarStarted = r))
+  on('tool.call', async () => {
+    calendarStarted()
+    await new Promise(r => setTimeout(r, 80))
+
+    return { result: {}, text: JSON.stringify(CALENDAR) }
+  })
+  on('clock.now', () => ({ value: NOW }))
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('agent.list', () => ({ value: [] }))
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  // Turn the demo on while the calendar read is still under way.
+  await started
+  await $.command.run({ command: 'forge-demo', args: '' } as never)
+  await new Promise(r => setTimeout(r, 200))
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /Pairing on the deploy script/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /Project check-in/ })).toBeFalsy()
+  await ui.unmount()
+})
